@@ -127,12 +127,21 @@ jobs:
             sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
           done
 
-      - name: Pack NuGet using .nuspec
+      - name: Install mono
+        if: steps.check_nuspec.outputs.nuspec == 'true'
+        run: sudo apt-get update && sudo apt-get install -y mono-complete
+
+      - name: Download nuget.exe
+        if: steps.check_nuspec.outputs.nuspec == 'true'
+        run: |
+          curl -L -o nuget.exe https://dist.nuget.org/win-x86-commandline/latest/nuget.exe
+
+      - name: Pack NuGet using nuget.exe
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
           mkdir -p ./nuget
           for file in *.nuspec; do
-            dotnet nuget pack "$file" -OutputDirectory ./nuget
+            mono nuget.exe pack "$file" -OutputDirectory ./nuget
           done
 
       - name: Push to NuGet using Trusted Publishing
