@@ -122,9 +122,9 @@ jobs:
           # Update all .nuspec files with placeholders
           for file in *.nuspec; do
             echo "Processing $file"
-            sed -i "s/\$version\$/$VERSION/g" "$file"
-            sed -i "s/\$projectUrl\$/$PROJECT_URL/g" "$file"
-            sed -i "s/\$repositoryUrl\$/$REPO_URL/g" "$file"
+            sed -i "s|\$version\$|$VERSION|g" "$file"
+            sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
+            sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
           done
 
       - name: Pack NuGet using .nuspec
