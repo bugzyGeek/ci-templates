@@ -1,0 +1,55 @@
+name: Reusable NuGet Publish
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        required: false
+        type: string
+        default: '8.0.x'
+
+permissions:
+  contents: read
+  id-token: write  # Required for Trusted Publishing
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build project
+        run: dotnet build --configuration Release
+
+      - name: Check for .nuspec file
+        id: check_nuspec
+        run: |
+          if ls *.nuspec 1> /dev/null 2>&1; then
+            echo "nuspec=true" >> $GITHUB_OUTPUT
+          else
+            echo "nuspec=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pack NuGet using .nuspec
+        if: steps.check_nuspec.outputs.nuspec == 'true'
+        run: |
+          mkdir -p ./nuget
+          for file in *.nuspec; do
+            dotnet nuget pack "$file" -OutputDirectory ./nuget
+          done
+
+      - name: Push to NuGet using Trusted Publishing
+        if: steps.check_nuspec.outputs.nuspec == 'true'
+        run: |
+          dotnet nuget push ./nuget/*.nupkg \
+            --source https://api.nuget.org/v3/index.json
