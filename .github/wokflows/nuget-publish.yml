@@ -40,6 +40,93 @@ jobs:
             echo "nuspec=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Calculate version from Git history
+        id: calc_version
+        run: |
+          # Fetch all tags and history
+          git fetch --tags --unshallow || git fetch --tags
+          
+          # Get the latest tag version or start with 0.0.0
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_VERSION=$(echo $LATEST_TAG | sed 's/^v//')
+          
+          # Parse version components
+          IFS='.' read -ra VERSION_PARTS <<< "$LATEST_VERSION"
+          MAJOR=${VERSION_PARTS[0]:-0}
+          MINOR=${VERSION_PARTS[1]:-0}
+          PATCH=${VERSION_PARTS[2]:-0}
+          
+          # Get commits since last tag
+          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges)
+          else
+            COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          fi
+          
+          # Analyze commit messages for version bumping
+          BUMP_MAJOR=false
+          BUMP_MINOR=false
+          BUMP_PATCH=false
+          
+          while IFS= read -r commit; do
+            # Check for breaking changes (major version bump)
+            if echo "$commit" | grep -iE "(breaking|break|major|BREAKING CHANGE)" > /dev/null; then
+              BUMP_MAJOR=true
+            # Check for new features (minor version bump)
+            elif echo "$commit" | grep -iE "(feat|feature|add|new)" > /dev/null; then
+              BUMP_MINOR=true
+            # Check for fixes, updates, etc. (patch version bump)
+            elif echo "$commit" | grep -iE "(fix|patch|update|refactor|perf|style|docs|test)" > /dev/null; then
+              BUMP_PATCH=true
+            fi
+          done <<< "$COMMITS"
+          
+          # Calculate new version based on semantic versioning
+          if [ "$BUMP_MAJOR" = true ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$BUMP_MINOR" = true ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          elif [ "$BUMP_PATCH" = true ]; then
+            PATCH=$((PATCH + 1))
+          else
+            # If no conventional commits found, default to patch bump
+            PATCH=$((PATCH + 1))
+          fi
+          
+          # Handle pre-release versions if on non-main branch
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          if [ "${{ github.ref_name }}" != "main" ] && [ "${{ github.ref_name }}" != "master" ]; then
+            BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
+            BUILD_NUMBER=$(git rev-list --count HEAD)
+            NEW_VERSION="${NEW_VERSION}-${BRANCH_NAME}.${BUILD_NUMBER}"
+          fi
+          
+          echo "Previous version: $LATEST_VERSION"
+          echo "New version: $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update .nuspec placeholders
+        if: steps.check_nuspec.outputs.nuspec == 'true'
+        run: |
+          VERSION="${{ steps.calc_version.outputs.version }}"
+          
+          # Set repository URL
+          REPO_URL="https://github.com/${{ github.repository }}"
+          PROJECT_URL="https://github.com/${{ github.repository }}"
+          
+          echo "Updating .nuspec files with version: $VERSION"
+          
+          # Update all .nuspec files with placeholders
+          for file in *.nuspec; do
+            echo "Processing $file"
+            sed -i "s/\$version\$/$VERSION/g" "$file"
+            sed -i "s/\$projectUrl\$/$PROJECT_URL/g" "$file"
+            sed -i "s/\$repositoryUrl\$/$REPO_URL/g" "$file"
+          done
+
       - name: Pack NuGet using .nuspec
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
