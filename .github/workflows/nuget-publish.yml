@@ -1,0 +1,170 @@
+name: NuGet Package Publish
+
+on:
+  workflow_call:
+    inputs:
+      project-path:
+        description: 'Path to the project or solution file to build and publish'
+        required: false
+        type: string
+        default: '.'
+      dotnet-version:
+        description: '.NET version to use'
+        required: false
+        type: string
+        default: '8.0.x'
+      configuration:
+        description: 'Build configuration (Debug/Release)'
+        required: false
+        type: string
+        default: 'Release'
+      nuget-source:
+        description: 'NuGet source URL'
+        required: false
+        type: string
+        default: 'https://api.nuget.org/v3/index.json'
+      package-version:
+        description: 'Package version (if not specified, uses project version)'
+        required: false
+        type: string
+      skip-tests:
+        description: 'Skip running tests before publishing'
+        required: false
+        type: boolean
+        default: false
+      dry-run:
+        description: 'Perform a dry run without actually publishing'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      nuget-api-key:
+        description: 'NuGet API key for publishing'
+        required: true
+    outputs:
+      package-name:
+        description: 'Name of the published package'
+        value: ${{ jobs.publish.outputs.package-name }}
+      package-version:
+        description: 'Version of the published package'
+        value: ${{ jobs.publish.outputs.package-version }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      package-name: ${{ steps.get-package-info.outputs.package-name }}
+      package-version: ${{ steps.get-package-info.outputs.package-version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ inputs.project-path }}
+
+      - name: Build project
+        run: |
+          if [ -n "${{ inputs.package-version }}" ]; then
+            dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.configuration }} --no-restore -p:Version=${{ inputs.package-version }}
+          else
+            dotnet build ${{ inputs.project-path }} --configuration ${{ inputs.configuration }} --no-restore
+          fi
+
+      - name: Run tests
+        if: ${{ !inputs.skip-tests }}
+        run: dotnet test ${{ inputs.project-path }} --configuration ${{ inputs.configuration }} --no-build --verbosity normal
+
+      - name: Get package information
+        id: get-package-info
+        run: |
+          # Find all .csproj or .fsproj files in the project path
+          if [ "${{ inputs.project-path }}" = "." ]; then
+            PROJECT_FILE=$(find . -name "*.csproj" -o -name "*.fsproj" | head -n 1)
+          elif [ -f "${{ inputs.project-path }}" ]; then
+            PROJECT_FILE="${{ inputs.project-path }}"
+          else
+            PROJECT_FILE=$(find "${{ inputs.project-path }}" -name "*.csproj" -o -name "*.fsproj" | head -n 1)
+          fi
+          
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "No project file found"
+            exit 1
+          fi
+          
+          # Extract package name and version
+          PACKAGE_NAME=$(dotnet msbuild "$PROJECT_FILE" -getProperty:PackageId -p:Configuration=${{ inputs.configuration }} 2>/dev/null || dotnet msbuild "$PROJECT_FILE" -getProperty:AssemblyName -p:Configuration=${{ inputs.configuration }})
+          
+          if [ -n "${{ inputs.package-version }}" ]; then
+            PACKAGE_VERSION="${{ inputs.package-version }}"
+          else
+            PACKAGE_VERSION=$(dotnet msbuild "$PROJECT_FILE" -getProperty:Version -p:Configuration=${{ inputs.configuration }})
+          fi
+          
+          echo "package-name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "package-version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+          echo "project-file=$PROJECT_FILE" >> $GITHUB_OUTPUT
+          
+          echo "📦 Package: $PACKAGE_NAME"
+          echo "🏷️ Version: $PACKAGE_VERSION"
+          echo "📁 Project: $PROJECT_FILE"
+
+      - name: Pack NuGet package
+        run: |
+          if [ -n "${{ inputs.package-version }}" ]; then
+            dotnet pack ${{ steps.get-package-info.outputs.project-file }} --configuration ${{ inputs.configuration }} --no-build -p:Version=${{ inputs.package-version }} --output ./nupkg
+          else
+            dotnet pack ${{ steps.get-package-info.outputs.project-file }} --configuration ${{ inputs.configuration }} --no-build --output ./nupkg
+          fi
+
+      - name: List generated packages
+        run: |
+          echo "Generated NuGet packages:"
+          ls -la ./nupkg/
+          
+      - name: Publish to NuGet (Dry Run)
+        if: ${{ inputs.dry-run }}
+        run: |
+          echo "🚀 Dry run mode - would publish the following packages:"
+          for package in ./nupkg/*.nupkg; do
+            echo "  - $(basename "$package")"
+            echo "    Source: ${{ inputs.nuget-source }}"
+            echo "    Command: dotnet nuget push \"$package\" --api-key [HIDDEN] --source ${{ inputs.nuget-source }}"
+          done
+
+      - name: Publish to NuGet
+        if: ${{ !inputs.dry-run }}
+        run: |
+          for package in ./nupkg/*.nupkg; do
+            echo "🚀 Publishing $(basename "$package") to ${{ inputs.nuget-source }}"
+            dotnet nuget push "$package" --api-key ${{ secrets.nuget-api-key }} --source ${{ inputs.nuget-source }} --skip-duplicate
+          done
+
+      - name: Upload NuGet packages as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./nupkg/*.nupkg
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## NuGet Package Publication Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Name:** ${{ steps.get-package-info.outputs.package-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Package Version:** ${{ steps.get-package-info.outputs.package-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Configuration:** ${{ inputs.configuration }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **NuGet Source:** ${{ inputs.nuget-source }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry Run:** ${{ inputs.dry-run }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            echo "🔍 **This was a dry run - no packages were actually published.**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **Package successfully published to NuGet!**" >> $GITHUB_STEP_SUMMARY
+          fi
