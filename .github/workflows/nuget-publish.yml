@@ -116,27 +116,57 @@ jobs:
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
           VERSION="${{ steps.calc_version.outputs.version }}"
-          
-          grep '\$version\$' Conflux.Paginize.nuspec
-          grep '\$projectUrl\$' Conflux.Paginize.nuspec
-          grep '\$repositoryUrl\$' Conflux.Paginize.nuspec
-
-          dos2unix Conflux.Paginize.nuspec
-
-          # Set repository URL
           REPO_URL="https://github.com/${{ github.repository }}"
           PROJECT_URL="https://github.com/${{ github.repository }}"
           
-          echo "Updating .nuspec files with version: $VERSION"
+          echo "=== Before replacement ==="
+          echo "Version: $VERSION"
+          echo "Project URL: $PROJECT_URL" 
+          echo "Repository URL: $REPO_URL"
           
-          # Update all .nuspec files with placeholders
+          # Show current content
+          echo "=== Current .nuspec content ==="
+          cat Conflux.Paginize.nuspec
+          
+          # Convert line endings
+          dos2unix Conflux.Paginize.nuspec
+          
+          echo "=== Updating placeholders ==="
+          
+          # Use more robust sed commands with escaped delimiters
           for file in *.nuspec; do
             echo "Processing $file"
-            LC_ALL=C sed -i "s|\$version\$|$VERSION|g" "$file"
-            LC_ALL=C sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
-            LC_ALL=C sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
+            
+            # Replace version placeholder
+            sed -i "s/\$version\$/$VERSION/g" "$file"
+            
+            # Replace project URL placeholder (using | as delimiter since URL contains /)
+            sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
+            
+            # Replace repository URL placeholder
+            sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
           done
+          
+          echo "=== After replacement ==="
           cat Conflux.Paginize.nuspec
+          
+          # Verify replacements were successful
+          if grep -q '\$version\$' Conflux.Paginize.nuspec; then
+            echo "ERROR: Version placeholder was not replaced!"
+            exit 1
+          fi
+          
+          if grep -q '\$projectUrl\$' Conflux.Paginize.nuspec; then
+            echo "ERROR: ProjectUrl placeholder was not replaced!"
+            exit 1
+          fi
+          
+          if grep -q '\$repositoryUrl\$' Conflux.Paginize.nuspec; then
+            echo "ERROR: RepositoryUrl placeholder was not replaced!"
+            exit 1
+          fi
+          
+          echo "All placeholders successfully replaced!"
 
       - name: Install mono
         if: steps.check_nuspec.outputs.nuspec == 'true'
