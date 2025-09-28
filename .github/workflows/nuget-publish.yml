@@ -113,6 +113,12 @@ jobs:
         run: |
           VERSION="${{ steps.calc_version.outputs.version }}"
           
+          grep '\$version\$' Conflux.Paginize.nuspec
+          grep '\$projectUrl\$' Conflux.Paginize.nuspec
+          grep '\$repositoryUrl\$' Conflux.Paginize.nuspec
+
+          dos2unix Conflux.Paginize.nuspec
+
           # Set repository URL
           REPO_URL="https://github.com/${{ github.repository }}"
           PROJECT_URL="https://github.com/${{ github.repository }}"
@@ -122,9 +128,9 @@ jobs:
           # Update all .nuspec files with placeholders
           for file in *.nuspec; do
             echo "Processing $file"
-            sed -i "s|\$version\$|$VERSION|g" "$file"
-            sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
-            sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
+            LC_ALL=C sed -i "s|\$version\$|$VERSION|g" "$file"
+            LC_ALL=C sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
+            LC_ALL=C sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
           done
           cat Conflux.Paginize.nuspec
 
