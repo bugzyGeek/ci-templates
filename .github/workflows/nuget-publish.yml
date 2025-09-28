@@ -112,24 +112,50 @@ jobs:
       - name: Install dos2unix
         run: sudo apt-get update && sudo apt-get install -y dos2unix
 
-      - name: Update .nuspec placeholders (Alternative)
+      - name: Update .nuspec placeholders (Python version)
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
           VERSION="${{ steps.calc_version.outputs.version }}"
           REPO_URL="https://github.com/${{ github.repository }}"
           PROJECT_URL="https://github.com/${{ github.repository }}"
           
-          # Use perl instead of sed for more reliable replacement
-          for file in *.nuspec; do
-            echo "Processing $file with perl"
-            perl -i -pe "s/\\\$version\\\$/$VERSION/g" "$file"
-            perl -i -pe "s/\\\$projectUrl\\\$/$PROJECT_URL/g" "$file"  
-            perl -i -pe "s/\\\$repositoryUrl\\\$/$REPO_URL/g" "$file"
-            
-            echo "=== Final .nuspec content ==="
-            cat $file
-            echo "============================="
-          done
+          # Convert line endings first
+          dos2unix *.nuspec
+          
+          python3 << 'EOF'
+          import os
+          import glob
+          
+          version = os.environ['VERSION']
+          repo_url = os.environ['REPO_URL']
+          project_url = os.environ['PROJECT_URL']
+          
+          print(f"Version: {version}")
+          print(f"Project URL: {project_url}")
+          print(f"Repository URL: {repo_url}")
+          
+          for file_path in glob.glob('*.nuspec'):
+              print(f"Processing {file_path}")
+              
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              
+              # Replace placeholders
+              content = content.replace('$version$', version)
+              content = content.replace('$projectUrl$', project_url)
+              content = content.replace('$repositoryUrl$', repo_url)
+              
+              with open(file_path, 'w', encoding='utf-8') as f:
+                  f.write(content)
+              
+              print(f"=== Final content of {file_path} ===")
+              print(content)
+              print("=" * 40)
+          EOF
+        env:
+          VERSION: ${{ steps.calc_version.outputs.version }}
+          REPO_URL: https://github.com/${{ github.repository }}
+          PROJECT_URL: https://github.com/${{ github.repository }}
           
 
       - name: Install mono
