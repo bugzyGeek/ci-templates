@@ -126,6 +126,7 @@ jobs:
             sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
             sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
           done
+          cat Conflux.Paginize.nuspec
 
       - name: Install mono
         if: steps.check_nuspec.outputs.nuspec == 'true'
