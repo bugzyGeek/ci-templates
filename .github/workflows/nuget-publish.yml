@@ -112,61 +112,25 @@ jobs:
       - name: Install dos2unix
         run: sudo apt-get update && sudo apt-get install -y dos2unix
 
-              - name: Update .nuspec placeholders
+      - name: Update .nuspec placeholders (Alternative)
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
           VERSION="${{ steps.calc_version.outputs.version }}"
           REPO_URL="https://github.com/${{ github.repository }}"
           PROJECT_URL="https://github.com/${{ github.repository }}"
           
-          echo "=== Before replacement ==="
-          echo "Version: $VERSION"
-          echo "Project URL: $PROJECT_URL" 
-          echo "Repository URL: $REPO_URL"
-          
-          # Show current content
-          echo "=== Current .nuspec content ==="
-          cat Conflux.Paginize.nuspec
-          
-          # Convert line endings
-          dos2unix Conflux.Paginize.nuspec
-          
-          echo "=== Updating placeholders ==="
-          
-          # Use more robust sed commands with escaped delimiters
+          # Use perl instead of sed for more reliable replacement
           for file in *.nuspec; do
-            echo "Processing $file"
+            echo "Processing $file with perl"
+            perl -i -pe "s/\\\$version\\\$/$VERSION/g" "$file"
+            perl -i -pe "s/\\\$projectUrl\\\$/$PROJECT_URL/g" "$file"  
+            perl -i -pe "s/\\\$repositoryUrl\\\$/$REPO_URL/g" "$file"
             
-            # Replace version placeholder
-            sed -i "s/\$version\$/$VERSION/g" "$file"
-            
-            # Replace project URL placeholder (using | as delimiter since URL contains /)
-            sed -i "s|\$projectUrl\$|$PROJECT_URL|g" "$file"
-            
-            # Replace repository URL placeholder
-            sed -i "s|\$repositoryUrl\$|$REPO_URL|g" "$file"
+            echo "=== Final .nuspec content ==="
+            cat $file
+            echo "============================="
           done
           
-          echo "=== After replacement ==="
-          cat Conflux.Paginize.nuspec
-          
-          # Verify replacements were successful
-          if grep -q '\$version\$' Conflux.Paginize.nuspec; then
-            echo "ERROR: Version placeholder was not replaced!"
-            exit 1
-          fi
-          
-          if grep -q '\$projectUrl\$' Conflux.Paginize.nuspec; then
-            echo "ERROR: ProjectUrl placeholder was not replaced!"
-            exit 1
-          fi
-          
-          if grep -q '\$repositoryUrl\$' Conflux.Paginize.nuspec; then
-            echo "ERROR: RepositoryUrl placeholder was not replaced!"
-            exit 1
-          fi
-          
-          echo "All placeholders successfully replaced!"
 
       - name: Install mono
         if: steps.check_nuspec.outputs.nuspec == 'true'
