@@ -108,6 +108,10 @@ jobs:
           echo "New version: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
+
+      - name: Install dos2unix
+        run: sudo apt-get update && sudo apt-get install -y dos2unix
+
       - name: Update .nuspec placeholders
         if: steps.check_nuspec.outputs.nuspec == 'true'
         run: |
